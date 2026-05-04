@@ -1,0 +1,20 @@
+accounts:
+  - library: partille
+    username: "YOUR_CARD_OR_PERSONNR"
+    password: "YOUR_PIN"
+    holder_alias: "Förnamn"
+
+  - library: alingsas
+    username: "YOUR_CARD_OR_PERSONNR"
+    password: "YOUR_PIN"
+    holder_alias: "Förnamn"
+
+  - library: lerum
+    username: "YOUR_CARD_OR_PERSONNR"
+    password: "YOUR_PIN"
+    holder_alias: "Förnamn"
+
+  - library: molnlycke
+    username: "YOUR_CARD_OR_PERSONNR"
+    password: "YOUR_PIN"
+    holder_alias: "Förnamn"

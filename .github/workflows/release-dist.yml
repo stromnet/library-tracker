@@ -1,0 +1,120 @@
+name: Release dist
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-dist:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install zip
+        run: sudo apt-get update && sudo apt-get install -y zip
+
+      - name: Determine build version and release metadata
+        id: meta
+        shell: bash
+        run: |
+          REF_NAME="${GITHUB_REF_NAME}"
+          SAFE_REF="$(echo "$REF_NAME" | tr '/ ' '--' | tr -cd '[:alnum:]._-')"
+          CURRENT_VERSION="$(python - <<'PY'
+          import pathlib, tomllib
+          data = tomllib.loads(pathlib.Path('pyproject.toml').read_text())
+          print(data['project']['version'])
+          PY
+          )"
+
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            BUILD_VERSION="${REF_NAME#v}"
+            RELEASE_TAG="$REF_NAME"
+            RELEASE_NAME="$REF_NAME"
+            IS_PRERELEASE=false
+          else
+            BUILD_VERSION="${CURRENT_VERSION}.dev${GITHUB_RUN_NUMBER}"
+            RELEASE_TAG="manual-${SAFE_REF}-${GITHUB_RUN_NUMBER}"
+            RELEASE_NAME="Manual build ${SAFE_REF} #${GITHUB_RUN_NUMBER}"
+            IS_PRERELEASE=true
+          fi
+
+          echo "build_version=$BUILD_VERSION" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "release_name=$RELEASE_NAME" >> "$GITHUB_OUTPUT"
+          echo "is_prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
+
+      - name: Patch pyproject version
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          version = "${{ steps.meta.outputs.build_version }}"
+          path = Path('pyproject.toml')
+          text = path.read_text()
+          text = re.sub(r'^version = ".*"$', f'version = "{version}"', text, flags=re.M)
+          path.write_text(text)
+          print(f'Patched pyproject.toml to version {version}')
+          PY
+
+      - name: Validate shell script
+        run: bash -n build-dist.sh
+
+      - name: Validate packaging metadata
+        run: |
+          python - <<'PY'
+          import pathlib, tomllib
+          data = tomllib.loads(pathlib.Path('pyproject.toml').read_text())
+          project = data.get('project', {})
+          assert project.get('name') == 'library-tracker', project.get('name')
+          assert project.get('version'), 'Missing project.version'
+          print('Validated pyproject.toml')
+          PY
+
+      - name: Build dist zip
+        run: |
+          chmod +x build-dist.sh
+          ./build-dist.sh
+
+      - name: Find artifact
+        id: artifact
+        run: |
+          FILE="$(ls -1 dist/library-tracker-*.zip | head -n 1)"
+          SHA_FILE="$FILE.sha256"
+          sha256sum "$FILE" > "$SHA_FILE"
+          echo "file=$FILE" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$FILE")" >> "$GITHUB_OUTPUT"
+          echo "sha_file=$SHA_FILE" >> "$GITHUB_OUTPUT"
+          echo "sha_name=$(basename "$SHA_FILE")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: |
+            ${{ steps.artifact.outputs.file }}
+            ${{ steps.artifact.outputs.sha_file }}
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.release_tag }}
+          name: ${{ steps.meta.outputs.release_name }}
+          prerelease: ${{ steps.meta.outputs.is_prerelease }}
+          files: |
+            ${{ steps.artifact.outputs.file }}
+            ${{ steps.artifact.outputs.sha_file }}
+          generate_release_notes: true
