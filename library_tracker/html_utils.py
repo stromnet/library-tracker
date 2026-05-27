@@ -69,9 +69,18 @@ def page_contains_login_error(page: str) -> bool:
     needles = [
         "felaktigt användarnamn eller lösenord",
         "wrong username or password",
-        "log in to your account",
     ]
     return any(needle in lowered for needle in needles)
+
+
+def koha_page_looks_logged_in(page: str) -> bool:
+    lowered = page.lower()
+    return (
+        'id="userdetails"' in lowered
+        or 'logout.x=1' in lowered
+        or 'din översikt' in lowered
+        or 'your summary' in lowered
+    )
 
 
 def _clean_text(value: str) -> str:

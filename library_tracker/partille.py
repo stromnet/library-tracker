@@ -3,7 +3,13 @@ from __future__ import annotations
 import logging
 import re
 
-from .html_utils import find_input_value, page_contains_login_error, strip_tags
+from .debug_dump import dump_html
+from .html_utils import (
+    find_input_value,
+    koha_page_looks_logged_in,
+    page_contains_login_error,
+    strip_tags,
+)
 from .http import Session
 from .koha import KohaLibraryClient
 from .models import AccountCredentials, LibraryAccountSnapshot
@@ -22,6 +28,8 @@ class PartilleLibrary(KohaLibraryClient):
     def fetch_account(self, credentials: AccountCredentials) -> LibraryAccountSnapshot:
         from .logging_utils import timed
 
+        account_label = f"partille_{credentials.username}"
+
         with timed(self.logger, "partille login page"):
             login_page = self._session.get(self.login_url)
             csrf_token = find_input_value(login_page.body, "csrf_token") or ""
@@ -38,8 +46,9 @@ class PartilleLibrary(KohaLibraryClient):
                 referer=self.login_url,
             )
 
-        if page_contains_login_error(response.body):
-            raise ValueError("Partille login failed")
+        if page_contains_login_error(response.body) or not koha_page_looks_logged_in(response.body):
+            dump_path = dump_html(account_label, "login_failure", response.body)
+            raise ValueError(f"Partille login failed (debug: {dump_path})")
 
         with timed(self.logger, "partille parse account"):
             pages = fetch_paginated_pages(
@@ -50,7 +59,9 @@ class PartilleLibrary(KohaLibraryClient):
                 account_name=self._extract_account_name(response.body),
                 card_number=self._extract_card_number(response.body),
             )
-            for page in pages:
+            for idx, page in enumerate(pages, start=1):
+                dump_path = dump_html(account_label, f"account_page_{idx}", page)
+                snapshot.debug_files.append(str(dump_path))
                 before_loans = len(snapshot.loans)
                 before_res = len(snapshot.reservations)
                 snapshot = self._extract_loans_and_reservations(page, snapshot=snapshot)

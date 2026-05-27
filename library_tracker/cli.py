@@ -42,6 +42,7 @@ def snapshot_to_dict(snapshot: LibraryAccountSnapshot) -> dict:
         "loans": [asdict(loan) for loan in snapshot.loans],
         "reservations": [asdict(reservation) for reservation in snapshot.reservations],
         "notes": snapshot.notes,
+        "debug_files": snapshot.debug_files,
     }
 
 
@@ -74,7 +75,11 @@ def print_snapshot(snapshot: LibraryAccountSnapshot) -> None:
 
     print("Lån:")
     if snapshot.loans:
-        for loan in snapshot.loans:
+        loans = sorted(
+            snapshot.loans,
+            key=lambda loan: (_sort_key_date(loan.due_date), loan.title.lower()),
+        )
+        for loan in loans:
             due = f" (förfaller {loan.due_date})" if loan.due_date else ""
             status = f" [{loan.status}]" if loan.status else ""
             print(f"- {loan.title}{due}{status}")
@@ -83,7 +88,14 @@ def print_snapshot(snapshot: LibraryAccountSnapshot) -> None:
 
     print("Reservationer:")
     if snapshot.reservations:
-        for reservation in snapshot.reservations:
+        reservations = sorted(
+            snapshot.reservations,
+            key=lambda reservation: (
+                _sort_key_date(reservation.expires_at),
+                reservation.title.lower(),
+            ),
+        )
+        for reservation in reservations:
             parts = [f"- {reservation.title}"]
             if reservation.status:
                 parts.append(f"[{reservation.status}]")
@@ -101,6 +113,13 @@ def print_snapshot(snapshot: LibraryAccountSnapshot) -> None:
         print("Anteckningar:")
         for note in snapshot.notes:
             print(f"- {note}")
+
+
+def _sort_key_date(value: str | None):
+    from .summary import parse_date
+
+    parsed = parse_date(value)
+    return (parsed is None, parsed)
 
 
 def print_combined_summary(

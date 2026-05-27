@@ -41,3 +41,4 @@ class LibraryAccountSnapshot:
     loans: list[Loan] = field(default_factory=list)
     reservations: list[Reservation] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    debug_files: list[str] = field(default_factory=list)

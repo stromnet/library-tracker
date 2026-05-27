@@ -98,12 +98,14 @@ def _render_snapshot(snapshot: LibraryAccountSnapshot) -> str:
     card_number = html.escape(snapshot.card_number) if snapshot.card_number and not snapshot.holder_alias else ""
     loans = _render_loans(snapshot)
     reservations = _render_reservations(snapshot)
+    debug_links = _render_debug_links(snapshot)
     return f"""
 <section>
   <div class=\"card-head\">
     <h2>{title}<span class=\"pill\">{library}</span></h2>
     <div class=\"meta\">{('Konto: ' + account_name + '<br>') if account_name else ''}{('Kortnummer: ' + card_number) if card_number else ''}</div>
   </div>
+  {debug_links}
   <div class=\"subhead\">Lån</div>
   {loans}
   <div class=\"subhead\">Reservationer</div>
@@ -112,11 +114,25 @@ def _render_snapshot(snapshot: LibraryAccountSnapshot) -> str:
 """
 
 
+def _render_debug_links(snapshot: LibraryAccountSnapshot) -> str:
+    if not snapshot.debug_files:
+        return ""
+    links = " ".join(
+        f'<a href="{html.escape(path)}" target="_blank" rel="noopener noreferrer">{html.escape(path.split("/")[-1])}</a>'
+        for path in snapshot.debug_files
+    )
+    return f'<div class="meta">Debug HTML: {links}</div>'
+
+
 def _render_loans(snapshot: LibraryAccountSnapshot) -> str:
     if not snapshot.loans:
         return '<div class="empty">Inga lån hittades</div>'
     rows = []
-    for loan in snapshot.loans:
+    loans = sorted(
+        snapshot.loans,
+        key=lambda loan: (_sort_key_date(loan.due_date), loan.title.lower()),
+    )
+    for loan in loans:
         rows.append(
             "<tr>"
             f"<td>{_render_title_link(loan.title, loan.raw.get('source_url'))}</td>"
@@ -137,7 +153,11 @@ def _render_reservations(snapshot: LibraryAccountSnapshot) -> str:
     if not snapshot.reservations:
         return '<div class="empty">Inga reservationer hittades</div>'
     rows = []
-    for reservation in snapshot.reservations:
+    reservations = sorted(
+        snapshot.reservations,
+        key=lambda reservation: (_sort_key_date(reservation.expires_at), reservation.title.lower()),
+    )
+    for reservation in reservations:
         rows.append(
             "<tr>"
             f"<td>{_render_title_link(reservation.title, reservation.raw.get('source_url'))}</td>"
@@ -188,6 +208,11 @@ def _render_highlight_group(title: str, items: list[DueHighlightItem] | list[Pic
         f'<div class="highlight-group"><h3>{html.escape(title)}</h3>'
         f'<table class="highlight-table"><thead><tr>{header}</tr></thead><tbody>' + ''.join(rows) + '</tbody></table></div>'
     )
+
+
+def _sort_key_date(value: str | None):
+    parsed = parse_date(value)
+    return (parsed is None, parsed)
 
 
 def _format_date_cell(value: str | None) -> str:

@@ -5,6 +5,7 @@ import logging
 import re
 
 from .base import LibraryClient
+from .debug_dump import dump_html
 from .html_utils import find_input_value, strip_tags
 from .http import Session
 from .models import AccountCredentials, LibraryAccountSnapshot, Loan, Reservation
@@ -23,6 +24,8 @@ class LerumLibrary(LibraryClient):
 
     def fetch_account(self, credentials: AccountCredentials) -> LibraryAccountSnapshot:
         from .logging_utils import timed
+
+        account_label = f"lerum_{credentials.username}"
 
         with timed(self.logger, "lerum login page"):
             login_page = self._session.get(self.login_url)
@@ -69,9 +72,13 @@ class LerumLibrary(LibraryClient):
                 account_name=self._extract_account_name(response.body),
                 card_number=credentials.username,
             )
-            for page in checked_out_pages:
+            for idx, page in enumerate(checked_out_pages, start=1):
+                dump_path = dump_html(account_label, f"checked_out_{idx}", page)
+                snapshot.debug_files.append(str(dump_path))
                 snapshot.loans.extend(self._extract_loans(page))
-            for page in holds_pages:
+            for idx, page in enumerate(holds_pages, start=1):
+                dump_path = dump_html(account_label, f"holds_{idx}", page)
+                snapshot.debug_files.append(str(dump_path))
                 snapshot.reservations.extend(self._extract_holds(page))
         return snapshot
 

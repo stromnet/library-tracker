@@ -6,6 +6,7 @@ import re
 import urllib.parse
 
 from .base import LibraryClient
+from .debug_dump import dump_html
 from .html_utils import strip_tags
 from .http import Session
 from .models import AccountCredentials, LibraryAccountSnapshot, Loan, Reservation
@@ -25,6 +26,8 @@ class MolnlyckeLibrary(LibraryClient):
     def fetch_account(self, credentials: AccountCredentials) -> LibraryAccountSnapshot:
         from .logging_utils import timed
 
+        account_label = f"molnlycke_{credentials.username}"
+
         with timed(self.logger, "mölnlycke portal login"):
             self._login_portal(credentials)
         with timed(self.logger, "mölnlycke patron login"):
@@ -32,6 +35,7 @@ class MolnlyckeLibrary(LibraryClient):
             self._login_patron(credentials, overview_page.body)
             overview_page = self._session.get(self.overview_url)
         with timed(self.logger, "mölnlycke fetch portlets"):
+            overview_dump = dump_html(account_label, "overview", overview_page.body)
             loans_pages = self._render_portlet_pages(
                 overview_page.body, "loansWicket_WAR_arenaportlet", "loansWicket"
             )
@@ -46,10 +50,15 @@ class MolnlyckeLibrary(LibraryClient):
                 library="Mölnlycke",
                 account_name=self._extract_account_name(overview_page.body),
                 card_number=credentials.username,
+                debug_files=[str(overview_dump)],
             )
-            for page in loans_pages:
+            for idx, page in enumerate(loans_pages, start=1):
+                dump_path = dump_html(account_label, f"loans_portlet_{idx}", page)
+                snapshot.debug_files.append(str(dump_path))
                 snapshot.loans.extend(self._extract_loans(page))
-            for page in reservations_pages:
+            for idx, page in enumerate(reservations_pages, start=1):
+                dump_path = dump_html(account_label, f"reservations_portlet_{idx}", page)
+                snapshot.debug_files.append(str(dump_path))
                 snapshot.reservations.extend(self._extract_reservations(page))
         return snapshot
 
